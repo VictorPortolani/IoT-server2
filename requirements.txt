@@ -1,0 +1,5 @@
+pip
+update
+pyserial
+flask
+firebase-admin

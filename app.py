@@ -1,37 +1,78 @@
+import firebase_admin
 import serial
 import threading
 import time
+import random
 
+# pyrefly: ignore [missing-import]
+import firebase_admin
+# pyrefly: ignore [missing-import]
+from firebase_admin import credentials
+# pyrefly: ignore [missing-import]
+from firebase_admin import firestore
 # pyrefly: ignore [missing-import]
 from flask import Flask, jsonify, render_template_string
 
+cred = credentials.Certificate("arduino_service.json")
+firebase_admin.initialize_app(cred)
+db = firestore.client()
+
 app = Flask(__name__)
 
+dados_sensor = {
+    "umidade": 0, 
+    "timestamp": firestore.SERVER_TIMESTAMP 
+    }
 PORTA_SERIAL = 'COM4' 
 BAUD_RATE = 9600
+INTERVALO_SALVAMENTO = 5
 
 umidade_atual = 0.0
 
-def ler_porta_serial():
-    global umidade_atual
+def salvar_no_firebase(umidade_atual):
     try:
-        ser = serial.Serial(PORTA_SERIAL, BAUD_RATE, timeout=1)
-        print(f"Conectado ao Arduino na porta {PORTA_SERIAL}")
-        
-        while True:
-            if ser.in_waiting > 0:
-                linha = ser.readline().decode('utf-8').strip()
-                
-
-                if "Umidade: " in linha:
-                    try:
-                        valor_str = linha.split("Umidade: ")[1].strip()
-                        umidade_atual = float(valor_str) 
-                    except ValueError:
-                        pass
+        db.collection("leituras").add({
+            "umidade": umidade_atual,
+            "timestamp": firestore.SERVER_TIMESTAMP
+        })
+        print(f"Dado transferido para o Firebase Firestore={umidade_atual}")
     except Exception as e:
-        print(f'Erro na comunicação Serial: {e}')
-        print('Verifique se a porta está correta ou se o monitor serial da IDE não está aberto.')
+        print(f"Erro ao salvar no Firebase Firestore: {e}")
+
+def ler_porta_serial():
+    global dados_sensor, umidade_atual
+    ultimo_salvamento = 0
+
+    while True:
+        try:
+            ser = serial.Serial(PORTA_SERIAL, BAUD_RATE, timeout=1)
+            time.sleep(2)
+            print(f"Conectado ao Arduino na porta {PORTA_SERIAL}")
+            
+            while True:
+                if ser.in_waiting > 0:
+                    linha = ser.readline().decode('utf-8').strip()
+                    
+                    if "Umidade: " in linha:
+                        try:
+                            valor_str = linha.split("Umidade: ")[1].strip()
+                            umidade_atual = float(valor_str)
+                            dados_sensor["umidade"] = umidade_atual
+                            dados_sensor["timestamp"] = time.strftime('%Y-%m-%d %H:%M:%S')
+
+                            agora = time.time()
+                            if agora - ultimo_salvamento >= INTERVALO_SALVAMENTO:
+                                salvar_no_firebase(umidade_atual)
+                                ultimo_salvamento = agora
+                        except ValueError:
+                            pass
+                else:
+                    time.sleep(0.1)
+        except Exception as e:
+            print(f'Erro na comunicação Serial: {e}')
+            print('Verifique se a porta está correta ou se o monitor serial da IDE não está aberto.')
+            time.sleep(5)
+            print("Tentando Reconectar...")
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -76,12 +117,44 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
+# @app.route('/api/dados')
+# def api_dados():
+#     return jsonify(dados_sensor)
+
+# if __name__ == '__main__':
+#     thread_arduino = threading.Thread(target=ler_porta_serial, daemon=True)
+#     thread_arduino.start()
+
+#     print("Iniciando servidor web na porta 80...")
+#     app.run(host='0.0.0.0', port=80)
+
+#A linha de código abaixo é feito somente para uso de teste
+#Resultado dado ficticio é enviado ao firestore database
+#Possíveis problemas, arduino da Fatec está com defeito
 @app.route('/api/dados')
-def api_dados():
-    return jsonify({"umidade": umidade_atual})
+def simular_arduino_mock():
+    """Função para rodar em casa sem o hardware físico"""
+    global dados_sensor, umidade_atual
+    ultimo_salvamento = 0
+
+    print("Iniciando simulação do Arduino (Mock)...")
+    while True:
+        try:
+            umidade_atual = random.uniform(300.0, 800.0)
+            dados_sensor["umidade"] = umidade_atual
+            dados_sensor["timestamp"] = time.strftime('%Y-%m-%d %H:%M:%S')
+            
+            agora = time.time()
+            if agora - ultimo_salvamento >= INTERVALO_SALVAMENTO:
+                salvar_no_firebase(umidade_atual)
+                ultimo_salvamento = agora
+                
+            time.sleep(2) 
+        except Exception as e:
+            print(f"Erro no Mock: {e}")
 
 if __name__ == '__main__':
-    thread_arduino = threading.Thread(target=ler_porta_serial, daemon=True)
+    thread_arduino = threading.Thread(target=simular_arduino_mock, daemon=True)
     thread_arduino.start()
 
     print("Iniciando servidor web na porta 80...")
