@@ -23,9 +23,9 @@ dados_sensor = {
     "umidade": 0, 
     "timestamp": firestore.SERVER_TIMESTAMP 
     }
-PORTA_SERIAL = 'COM4' 
+PORTA_SERIAL = 'COM5' 
 BAUD_RATE = 9600
-INTERVALO_SALVAMENTO = 5
+INTERVALO_SALVAMENTO = 10
 
 umidade_atual = 0.0
 
@@ -117,44 +117,12 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-# @app.route('/api/dados')
-# def api_dados():
-#     return jsonify(dados_sensor)
-
-# if __name__ == '__main__':
-#     thread_arduino = threading.Thread(target=ler_porta_serial, daemon=True)
-#     thread_arduino.start()
-
-#     print("Iniciando servidor web na porta 80...")
-#     app.run(host='0.0.0.0', port=80)
-
-#A linha de código abaixo é feito somente para uso de teste
-#Resultado dado ficticio é enviado ao firestore database
-#Possíveis problemas, arduino da Fatec está com defeito
 @app.route('/api/dados')
-def simular_arduino_mock():
-    """Função para rodar em casa sem o hardware físico"""
-    global dados_sensor, umidade_atual
-    ultimo_salvamento = 0
-
-    print("Iniciando simulação do Arduino (Mock)...")
-    while True:
-        try:
-            umidade_atual = random.uniform(300.0, 800.0)
-            dados_sensor["umidade"] = umidade_atual
-            dados_sensor["timestamp"] = time.strftime('%Y-%m-%d %H:%M:%S')
-            
-            agora = time.time()
-            if agora - ultimo_salvamento >= INTERVALO_SALVAMENTO:
-                salvar_no_firebase(umidade_atual)
-                ultimo_salvamento = agora
-                
-            time.sleep(2) 
-        except Exception as e:
-            print(f"Erro no Mock: {e}")
+def api_dados():
+    return jsonify(dados_sensor)
 
 if __name__ == '__main__':
-    thread_arduino = threading.Thread(target=simular_arduino_mock, daemon=True)
+    thread_arduino = threading.Thread(target=ler_porta_serial, daemon=True)
     thread_arduino.start()
 
     print("Iniciando servidor web na porta 80...")
