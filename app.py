@@ -26,6 +26,8 @@ dados_sensor = {
 PORTA_SERIAL = 'COM5' 
 BAUD_RATE = 9600
 INTERVALO_SALVAMENTO = 10
+UMIDADE_RISCO = 800
+UMIDADE_EXCESSO = 400
 
 umidade_atual = 0.0
 
@@ -62,8 +64,12 @@ def ler_porta_serial():
 
                             agora = time.time()
                             if agora - ultimo_salvamento >= INTERVALO_SALVAMENTO:
-                                salvar_no_firebase(umidade_atual)
-                                ultimo_salvamento = agora
+                                if umidade_atual > UMIDADE_RISCO:
+                                    salvar_no_firebase(UMIDADE_RISCO)
+                                elif umidade_atual < UMIDADE_EXCESSO:
+                                    salvar_no_firebase(UMIDADE_EXCESSO)
+                                else:
+                                    salvar_no_firebase(umidade_atual)
                         except ValueError:
                             pass
                 else:
@@ -83,16 +89,21 @@ HTML_TEMPLATE = """
     <title>Monitor de Umidade do Solo</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background-color: #f4f4f9; padding-top: 100px; }
-        .card { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: inline-block; }
+        .card { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: inline-block; min-width: 300px; }
         h1 { color: #333; margin-top: 0;}
         .valor { font-size: 5em; font-weight: bold; color: #0078D7; }
         .unidade { font-size: 0.3em; color: #666; }
+        .status { font-size: 1.8em; font-weight: bold; margin-top: 20px; transition: color 0.3s ease; }
+        .status.seco { color: #d9534f; }
+        .status.umido { color: #0275d8; }
+        .status.normal { color: #5cb85c; }
     </style>
 </head>
 <body>
     <div class="card">
         <h1>Umidade Atual (ADC)</h1>
         <div class="valor" id="umidade-display">--</div>
+        <div class="status" id="status-display">--</div>
     </div>
 
     <script>
@@ -101,13 +112,26 @@ HTML_TEMPLATE = """
             fetch('/api/dados')
                 .then(response => response.json())
                 .then(data => {
-                    // O Arduino envia o valor do analogRead (0 a 1023), então toFixed(0) é ideal aqui
-                    document.getElementById('umidade-display').innerHTML = data.umidade.toFixed(0);
+                    const umidade = data.umidade;
+                    document.getElementById('umidade-display').innerHTML = umidade.toFixed(0);
+                    
+                    const statusDisplay = document.getElementById('status-display');
+                    if (umidade >= 800) {
+                        statusDisplay.innerHTML = "Solo Seco";
+                        statusDisplay.className = "status seco";
+                    } else if (umidade <= 400) {
+                        statusDisplay.innerHTML = "Solo Muito Úmido";
+                        statusDisplay.className = "status umido";
+                    } else {
+                        statusDisplay.innerHTML = "Solo Normal";
+                        statusDisplay.className = "status normal";
+                    }
                 })
                 .catch(error => console.error('Erro de conexão:', error));
         }
 
         setInterval(buscarUmidade, 500);
+        buscarUmidade(); 
     </script>
 </body>
 </html>
@@ -125,5 +149,5 @@ if __name__ == '__main__':
     thread_arduino = threading.Thread(target=ler_porta_serial, daemon=True)
     thread_arduino.start()
 
-    print("Iniciando servidor web na porta 80...")
-    app.run(host='0.0.0.0', port=80)
+    print("Iniciando servidor web na porta 8080...")
+    app.run(host='0.0.0.0', port=8080)
